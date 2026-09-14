@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三陸鉄道 在庫管理＋レジ（Firebase版）</title>
+
+<style>
+body{
+    font-family:sans-serif;
+    background:#eef5ff;
+    padding:20px;
+    margin:0;
+}
+.container{max-width:900px;margin:auto;}
+.card{
+    background:#fff;
+    border-radius:12px;
+    padding:15px;
+    margin-bottom:12px;
+}
+.item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:#fff;
+    border-radius:12px;
+    padding:10px;
+    margin-top:8px;
+}
+.controls{
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+.pm{width:34px;height:34px;font-size:18px;}
+.cartrow{display:flex;justify-content:space-between;margin:4px 0;}
+.money button{margin:3px;padding:8px 10px;}
+.totalbox,.changebox{
+    text-align:center;
+    margin:12px 0;
+    font-weight:bold;
+}
+.totalbox span{
+    display:block;
+    font-size:42px;
+    color:#0066cc;
+    border-bottom:4px solid #0066cc;
+}
+.changebox span{
+    display:block;
+    font-size:42px;
+    color:#d60000;
+    border-bottom:4px solid #d60000;
+}
+.history{
+    max-height:240px;
+    overflow:auto;
+}
+button{
+    border:none;
+    border-radius:8px;
+    padding:8px 14px;
+    background:#0b72ff;
+    color:white;
+}
+button:hover{opacity:0.9;}
+input,select{
+    padding:8px;
+    border-radius:8px;
+    border:1px solid #ccc;
+}
+.small{font-size:13px;color:#666;}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<div class="card">
+<h2>🚆 三陸鉄道 物販在庫管理＋レジ</h2>
+<div class="small" id="syncStatus">Firebase接続中...</div>
+</div>
+
+<div class="card">
+<h3>レジ</h3>
+<select id="productSelect"></select>
+<input id="qty" type="number" value="1" min="1">
+<button onclick="addCart()">追加</button>
+
+<div id="cartView"></div>
+
+<div class="totalbox">
+合計
+<span id="total">¥0</span>
+</div>
+
+<div class="money">
+<button onclick="addPaid(10)">10円</button>
+<button onclick="addPaid(100)">100円</button>
+<button onclick="addPaid(500)">500円</button>
+<button onclick="addPaid(1000)">1000円</button>
+<button onclick="addPaid(2000)">2000円</button>
+<button onclick="addPaid(5000)">5000円</button>
+<button onclick="addPaid(10000)">10000円</button>
+<button onclick="setTotalToPaid()">全額</button>
+</div>
+
+<input id="paid" type="number" placeholder="お預かり金額" oninput="calcChange()">
+
+<div class="changebox">
+おつり
+<span id="change">¥0</span>
+</div>
+
+<button onclick="checkout()">会計完了</button>
+<button onclick="undoLastCheckout()">最後の会計取消</button>
+</div>
+
+<div class="card">
+売上：<span id="sales">¥0</span>
+｜販売数：<span id="sold">0個</span>
+</div>
+
+<div class="card">
+<h3>会計履歴</h3>
+<div id="history" class="history"></div>
+</div>
+
+<div id="items"></div>
+
+<div class="card">
+<button onclick="resetAll()">在庫リセット</button>
+</div>
+
+</div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+
+import {
+getFirestore,
+doc,
+getDoc,
+setDoc,
+updateDoc,
+onSnapshot,
+serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyApKg0j7iIBPEaWSLy8v0WApw6ivs6oVq0",
+  authDomain: "aoimori.firebaseapp.com",
+  projectId: "aoimori",
+  storageBucket: "aoimori.firebasestorage.app",
+  messagingSenderId: "305338297712",
+  appId: "1:305338297712:web:239737834d625c6335b3b5",
+  measurementId: "G-NEKXZ89X05"
+};
+
+const app=initializeApp(firebaseConfig);
+const db=getFirestore(app);
+const inventoryRef=doc(db,"sanriku","inventory");
+
+const DEFAULT_PRODUCTS = [
+["三鉄絶景ファイル", 350, 80],
+["三鉄メモ帳", 660, 40],
+["三鉄オリジナルボールペン", 300, 50],
+["走る！列車型キーホルダー", 670, 40],
+["さんてつオリジナルコースター", 300, 20],
+["列車目覚まし時計", 1700, 10],
+["三陸鉄道列車型ペンケース", 1500, 30],
+["鉄印キーホルダー", 550, 60],
+["三鉄チキンカレー", 540, 60],
+["さんてつプレミアム缶詰", 550, 60],
+["海だけの炊き込みご飯の素", 1134, 10],
+["さんてつクッキー", 700, 100]
+].map(([name,price,stock])=>({name,price,stock,initial:stock}));
+
+let products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+let cart=[];
+let historyLog=[];
+let lastSale=null;
+let syncing=false;
+let firebaseReady=false;
+
+const productSelect=document.getElementById("productSelect");
+const cartView=document.getElementById("cartView");
+const historyDiv=document.getElementById("history");
+const itemsDiv=document.getElementById("items");
+const syncStatus=document.getElementById("syncStatus");
+
+function fillProducts(){
+productSelect.innerHTML="";
+products.forEach((p,i)=>{
+productSelect.innerHTML+=`<option value="${i}">${p.name} ¥${p.price}</option>`;
+});
+}
+
+async function saveFirestore(){
+if(syncing) return;
+await setDoc(inventoryRef,{
+  stocks:products.map(p=>p.stock),
+  history:historyLog,
+  updatedAt:serverTimestamp()
+},{merge:true});
+}
+
+async function firstLoad(){
+try {
+  const snap=await getDoc(inventoryRef);
+  if(snap.exists()){
+    const data=snap.data();
+    console.log("Firebase data loaded:", data);
+    if(data.stocks && Array.isArray(data.stocks)){
+      data.stocks.forEach((s,i)=>{
+        if(products[i]) products[i].stock=s;
+      });
+    }
+    historyLog=data.history||[];
+  }else{
+    console.log("No existing data in Firestore, creating...");
+    await setDoc(inventoryRef,{
+      stocks:products.map(p=>p.stock),
+      history:[],
+      updatedAt:serverTimestamp()
+    });
+  }
+} catch (error) {
+  console.error("Error loading from Firestore:", error);
+  syncStatus.textContent="⚠️ Firebase読み込みエラー";
+  syncStatus.style.color="orange";
+}
+draw();
+renderCart();
+}
+
+// リアルタイムリスナーの設定
+onSnapshot(inventoryRef,(snap)=>{
+if(!snap.exists()) {
+  console.log("No snapshot data available");
+  return;
+}
+syncing=true;
+const data=snap.data();
+console.log("Real-time update received:", data);
+if(data.stocks && Array.isArray(data.stocks)){
+  data.stocks.forEach((s,i)=>{
+    if(products[i]) products[i].stock=s;
+  });
+}
+historyLog=data.history||[];
+draw();
+renderCart();
+syncStatus.textContent="🟢 リアルタイム同期中";
+syncStatus.style.color="green";
+syncing=false;
+firebaseReady=true;
+},(error)=>{
+  console.error("Firestore listener error:", error);
+  syncStatus.textContent="🔴 Firebase同期エラー";
+  syncStatus.style.color="red";
+});
+
+function renderHistory(){
+historyDiv.innerHTML=historyLog.map((h,index)=>`
+<div style="padding:8px;border-bottom:1px solid #ddd">
+<b>${h.time}</b><br>
+${h.text}<br>
+<small>¥${h.total.toLocaleString()}</small>
+</div>`).join("");
+}
+
+function draw(){
+let sales=0;
+let sold=0;
+itemsDiv.innerHTML="";
+products.forEach((p,i)=>{
+const soldQty=p.initial-p.stock;
+sales+=soldQty*p.price;
+sold+=soldQty;
+itemsDiv.innerHTML+=`
+<div class="item">
+<div>
+<b>${p.name}</b><br>
+¥${p.price}
+</div>
+<div class="controls">
+<button class="pm" onclick="minus(${i})">−</button>
+<input value="${p.stock}" style="width:60px" onchange="setStock(${i},this.value)">
+<button class="pm" onclick="plus(${i})">＋</button>
+</div>
+</div>`;
+});
+document.getElementById("sales").textContent="¥"+sales.toLocaleString();
+document.getElementById("sold").textContent=sold+"個";
+renderHistory();
+}
+
+window.plus=async(i)=>{
+products[i].stock++;
+draw();
+await saveFirestore();
+};
+
+window.minus=async(i)=>{
+if(products[i].stock===0)return;
+products[i].stock--;
+draw();
+await saveFirestore();
+};
+
+window.setStock=async(i,val)=>{
+products[i].stock=Math.max(0,Number(val)||0);
+draw();
+await saveFirestore();
+};
+
+window.addCart=()=>{
+const index=Number(productSelect.value);
+const qty=Math.max(1,Number(document.getElementById("qty").value)||1);
+const p=products[index];
+cart.push({i:index,name:p.name,price:p.price,qty});
+renderCart();
+};
+
+function totalPrice(){
+return cart.reduce((sum,c)=>sum+c.price*c.qty,0);
+}
+
+function renderCart(){
+let html="";
+cart.forEach((c,index)=>{
+html+=`<div class="cartrow"><span>${c.name} × ${c.qty}</span><span>¥${(c.qty*c.price).toLocaleString()} <button onclick="removeCartItem(${index})">削除</button></span></div>`;
+});
+cartView.innerHTML=html;
+document.getElementById("total").textContent="¥"+totalPrice().toLocaleString();
+calcChange();
+}
+
+window.addPaid=(v)=>{
+const paid=document.getElementById("paid");
+paid.value=(Number(paid.value)||0)+v;
+calcChange();
+};
+
+window.setTotalToPaid=()=>{
+document.getElementById("paid").value=totalPrice();
+calcChange();
+};
+
+window.calcChange=()=>{
+const paid=Number(document.getElementById("paid").value)||0;
+const change=paid-totalPrice();
+document.getElementById("change").textContent="¥"+change.toLocaleString();
+};
+
+fillProducts();
+await firstLoad();
+
+window.checkout = async () => {
+
+    if(cart.length===0){
+        alert("商品がありません");
+        return;
+    }
+
+    const total = totalPrice();
+
+    const paid = Number(document.getElementById("paid").value)||0;
+
+    if(paid<total){
+        alert("お預かり金額が不足しています");
+        return;
+    }
+
+    lastSale = JSON.parse(JSON.stringify(cart));
+
+    cart.forEach(c=>{
+        products[c.i].stock=Math.max(0,products[c.i].stock-c.qty);
+    });
+
+    historyLog.unshift({
+        id:Date.now(),
+        time:new Date().toLocaleString("ja-JP"),
+        text:cart.map(c=>`${c.name} × ${c.qty}`).join(" / "),
+        total:total,
+        items:JSON.parse(JSON.stringify(cart))
+    });
+
+    cart=[];
+
+    document.getElementById("paid").value="";
+
+    draw();
+    renderCart();
+
+    await saveFirestore();
+
+};
+
+window.undoLastCheckout = async ()=>{
+
+    if(!lastSale){
+        alert("取り消せる会計がありません");
+        return;
+    }
+
+    lastSale.forEach(c=>{
+        products[c.i].stock += c.qty;
+    });
+
+    historyLog.unshift({
+        id:Date.now(),
+        time:new Date().toLocaleString("ja-JP"),
+        text:"会計取消",
+        total:0,
+        items:[]
+    });
+
+    lastSale=null;
+
+    draw();
+
+    await saveFirestore();
+
+};
+
+window.resetAll = async ()=>{
+
+    if(!confirm("在庫と履歴をすべてリセットしますか？")){
+        return;
+    }
+
+    products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+
+    historyLog=[];
+
+    cart=[];
+
+    lastSale=null;
+
+    document.getElementById("paid").value="";
+
+    fillProducts();
+    draw();
+    renderCart();
+
+    await setDoc(inventoryRef,{
+        stocks:products.map(p=>p.stock),
+        history:[],
+        updatedAt:serverTimestamp()
+    });
+
+};
+
+window.clearCart = ()=>{
+    cart=[];
+    renderCart();
+};
+
+window.removeCartItem = (index)=>{
+    cart.splice(index,1);
+    renderCart();
+};
+
+window.exportInventory = ()=>{
+
+    const data={
+        stocks:products.map(p=>({
+            name:p.name,
+            stock:p.stock
+        })),
+        history:historyLog
+    };
+
+    const blob=new Blob(
+        [JSON.stringify(data,null,2)],
+        {type:"application/json"}
+    );
+
+    const url=URL.createObjectURL(blob);
+
+    const a=document.createElement("a");
+    a.href=url;
+    a.download="aoimori_inventory_backup.json";
+    a.click();
+
+    URL.revokeObjectURL(url);
+
+};
+
+window.importInventory = async (event)=>{
+
+    const file=event.target.files[0];
+
+    if(!file) return;
+
+    const text=await file.text();
+
+    const data=JSON.parse(text);
+
+    if(data.stocks){
+        data.stocks.forEach((item,i)=>{
+            products[i].stock=item.stock;
+        });
+    }
+
+    historyLog=data.history||[];
+
+    draw();
+
+    await saveFirestore();
+
+};
+
+console.log("Firebase Ready");
+
+syncStatus.textContent="🟢 Firestore同期完了";
+
+</script>
+
+</body>
+</html>
