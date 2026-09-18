@@ -318,12 +318,30 @@ draw();
 await saveFirestore();
 };
 
-window.addCart=()=>{
-const index=Number(productSelect.value);
-const qty=Math.max(1,Number(document.getElementById("qty").value)||1);
-const p=products[index];
-cart.push({i:index,name:p.name,price:p.price,qty});
-renderCart();
+window.addCart = () => {
+    const index = Number(productSelect.value);
+    const qty = Math.max(1, Number(document.getElementById("qty").value) || 1);
+    const p = products[index];
+
+    // 在庫不足・売り切れチェック
+    if (p.stock === 0) {
+        alert(`${p.name} は売り切れです。`);
+        return;
+    }
+
+    if (qty > p.stock) {
+        alert(`${p.name} の在庫は ${p.stock} 個しかありません。`);
+        return;
+    }
+
+    cart.push({
+        i: index,
+        name: p.name,
+        price: p.price,
+        qty: qty
+    });
+
+    renderCart();
 };
 
 function totalPrice(){
