@@ -272,23 +272,44 @@ firebaseReady=true;
 
 let deleteMode = false;
 
+let deleteMode = false;
+
 function renderHistory(){
-    historyDiv.innerHTML = historyLog.map(h => `
-        <div style="padding:8px;border-bottom:1px solid #ddd">
-            <b>${h.time}</b><br>
-            ${h.text}<br>
-            <small>¥${h.total.toLocaleString()}</small>
 
-            ${deleteMode
-                ? `<br><button style="background:#d60000;margin-top:6px"
-                     onclick="deleteHistory(${h.id})">削除</button>`
-                : ""
-            }
-        </div>
-    `).join("");
+    historyDiv.innerHTML = "";
 
+    historyLog.forEach(h => {
+
+        const div = document.createElement("div");
+
+        div.style.padding = "8px";
+        div.style.borderBottom = "1px solid #ddd";
+
+        div.innerHTML =
+            "<b>" + h.time + "</b><br>" +
+            h.text + "<br>" +
+            "<small>¥" + h.total.toLocaleString() + "</small>";
+
+        if(deleteMode){
+
+            const br = document.createElement("br");
+            div.appendChild(br);
+
+            const btn = document.createElement("button");
+
+            btn.textContent = "この会計を削除";
+            btn.style.background = "#d60000";
+            btn.style.marginTop = "6px";
+
+            btn.onclick = () => window.deleteHistory(h.id);
+
+            div.appendChild(btn);
+        }
+
+        historyDiv.appendChild(div);
+    });
 }
-
+    
 function draw(){
 let sales=0;
 let sold=0;
