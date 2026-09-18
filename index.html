@@ -267,8 +267,9 @@ firebaseReady=true;
   syncStatus.style.color="red";
 });
 
-function renderHistory(){
+let deleteMode = false;
 
+function renderHistory(){
     historyDiv.innerHTML = historyLog.map(h => `
         <div style="padding:8px;border-bottom:1px solid #ddd">
             <b>${h.time}</b><br>
