@@ -486,6 +486,20 @@ window.resetAll = async ()=>{
 
 };
 
+window.toggleDeleteMode = () => {
+    deleteMode = !deleteMode;
+    renderHistory();
+};
+
+window.deleteHistory = async (id) => {
+    if (!confirm("この会計履歴を削除しますか？")) return;
+
+    historyLog = historyLog.filter(h => h.id !== id);
+
+    renderHistory();
+    await saveFirestore();
+};
+
 window.clearCart = ()=>{
     cart=[];
     renderCart();
