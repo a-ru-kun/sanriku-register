@@ -268,12 +268,21 @@ firebaseReady=true;
 });
 
 function renderHistory(){
-historyDiv.innerHTML=historyLog.map((h,index)=>`
-<div style="padding:8px;border-bottom:1px solid #ddd">
-<b>${h.time}</b><br>
-${h.text}<br>
-<small>¥${h.total.toLocaleString()}</small>
-</div>`).join("");
+
+    historyDiv.innerHTML = historyLog.map(h => `
+        <div style="padding:8px;border-bottom:1px solid #ddd">
+            <b>${h.time}</b><br>
+            ${h.text}<br>
+            <small>¥${h.total.toLocaleString()}</small>
+
+            ${deleteMode
+                ? `<br><button style="background:#d60000;margin-top:6px"
+                     onclick="deleteHistory(${h.id})">削除</button>`
+                : ""
+            }
+        </div>
+    `).join("");
+
 }
 
 function draw(){
