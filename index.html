@@ -512,17 +512,57 @@ window.resetAll = async ()=>{
 };
 
 window.toggleDeleteMode = () => {
+
     deleteMode = !deleteMode;
+
     renderHistory();
 };
 
+
 window.deleteHistory = async (id) => {
-    if (!confirm("この会計履歴を削除しますか？")) return;
 
-    historyLog = historyLog.filter(h => h.id !== id);
+    const index = historyLog.findIndex(h => h.id === id);
 
-    renderHistory();
+    if(index === -1){
+        alert("会計履歴が見つかりません");
+        return;
+    }
+
+    const sale = historyLog[index];
+
+    if(!sale.items || sale.items.length === 0){
+        alert("この履歴には販売商品の情報がありません。\n在庫を自動で戻せません。");
+        return;
+    }
+
+    if(!confirm(
+        "この会計履歴を削除しますか？\n\n" +
+        sale.text +
+        "\n\n削除すると、販売した商品の在庫も元に戻ります。"
+    )){
+        return;
+    }
+
+    // 販売した商品の在庫を元に戻す
+    sale.items.forEach(c => {
+
+        if(products[c.i]){
+            products[c.i].stock += c.qty;
+        }
+
+    });
+
+    // 履歴から削除
+    historyLog.splice(index,1);
+
+    // 表示更新
+    draw();
+    renderCart();
+
+    // Firebaseへ保存
     await saveFirestore();
+
+    alert("会計履歴を削除し、在庫も元に戻しました。");
 };
 
 window.clearCart = ()=>{
