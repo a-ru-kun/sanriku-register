@@ -480,41 +480,30 @@ window.undoLastCheckout = async ()=>{
 
 };
 
-window.resetAll = async ()=>{
+window.resetAll = async () => {
 
-    if(!confirm("在庫と履歴をすべてリセットしますか？")){
+    if (!confirm("在庫を初期値に戻しますか？")) {
         return;
     }
 
     products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
 
-    historyLog=[];
+    cart = [];
+    lastSale = null;
 
-    cart=[];
-
-    lastSale=null;
-
-    document.getElementById("paid").value="";
+    document.getElementById("paid").value = "";
 
     fillProducts();
     draw();
     renderCart();
 
     await setDoc(inventoryRef,{
-        stocks:products.map(p=>p.stock),
-        history:[],
-        updatedAt:serverTimestamp()
-    });
+        stocks: products.map(p => p.stock),
+        history: historyLog,   // 履歴は残す
+        updatedAt: serverTimestamp()
+    }, { merge: true });
 
 };
-
-window.toggleDeleteMode = () => {
-
-    deleteMode = !deleteMode;
-
-    renderHistory();
-};
-
 
 window.deleteHistory = async (id) => {
 
